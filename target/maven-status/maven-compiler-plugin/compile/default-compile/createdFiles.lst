@@ -1,0 +1,6 @@
+META-INF/annotations/org.jenkinsci.Symbol
+org/jenkinsci/plugins/beanstalker/HelloWorldBuilder.stapler
+org/jenkinsci/plugins/beanstalker/HelloWorldBuilder/DescriptorImpl/doCheckName.stapler
+org/jenkinsci/plugins/beanstalker/HelloWorldBuilder.class
+META-INF/annotations/hudson.Extension
+org/jenkinsci/plugins/beanstalker/HelloWorldBuilder$DescriptorImpl.class

@@ -1,0 +1,18 @@
+Manifest-Version: 1.0
+Built-By: john
+Created-By: Apache Maven
+Build-Jdk: 1.8.0_121
+Extension-Name: beanstalker
+Specification-Title: TODO
+Implementation-Title: beanstalker
+Implementation-Version: 1.0-SNAPSHOT
+Group-Id: org.jenkins-ci.plugins
+Short-Name: beanstalker
+Long-Name: TODO Plugin
+Url: https://wiki.jenkins-ci.org/display/JENKINS/TODO+Plugin
+Plugin-Version: 1.0-SNAPSHOT (private-08/10/2017 11:21-john)
+Hudson-Version: 1.625.3
+Jenkins-Version: 1.625.3
+Plugin-Dependencies: structs:1.9,credentials:2.0
+Plugin-Developers: 
+

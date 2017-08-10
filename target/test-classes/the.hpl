@@ -1,0 +1,14 @@
+Manifest-Version: 1.0
+Group-Id: org.jenkins-ci.plugins
+Short-Name: beanstalker
+Long-Name: TODO Plugin
+Url: https://wiki.jenkins-ci.org/display/JENKINS/TODO+Plugin
+Plugin-Version: 1.0-SNAPSHOT (private-08/10/2017 11:21-john)
+Hudson-Version: 1.625.3
+Jenkins-Version: 1.625.3
+Plugin-Dependencies: credentials:2.0,structs:1.9
+Plugin-Developers: 
+Libraries: /home/john/workspace/beanstalker/src/main/resources,/home/j
+ ohn/workspace/beanstalker/target/classes
+Resource-Path: /home/john/workspace/beanstalker/src/main/webapp
+
