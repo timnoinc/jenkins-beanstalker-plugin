@@ -17,9 +17,15 @@
     <f:textbox />
   </f:entry>
   <f:entry title="Includes" field="includes">
-    <f:textbox />
+    <f:textbox default="${descriptor.defaultIncludes}"/>
   </f:entry>
   <f:entry title="Excludes" field="excludes">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="S3 Bucket" field="S3Bucket">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="S3 Prefix" field="S3 Prefix">
     <f:textbox />
   </f:entry>
 </j:jelly>

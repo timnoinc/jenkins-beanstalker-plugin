@@ -1,7 +1,11 @@
 package org.jenkinsci.plugins.beanstalker;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 
+import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 import javax.servlet.ServletException;
 
 import org.jenkinsci.Symbol;
@@ -12,7 +16,11 @@ import org.kohsuke.stapler.StaplerRequest;
 
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalk;
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalkClientBuilder;
+import com.amazonaws.services.elasticbeanstalk.model.CreateApplicationVersionRequest;
 import com.amazonaws.services.elasticbeanstalk.model.DescribeApplicationsRequest;
+import com.amazonaws.services.elasticbeanstalk.model.S3Location;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 
 import hudson.Extension;
 import hudson.FilePath;
@@ -24,18 +32,30 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.Builder;
+import hudson.util.DirScanner;
 import hudson.util.FormValidation;
 import jenkins.tasks.SimpleBuildStep;
 import net.sf.json.JSONObject;
 
+/**
+ * Zip up the workspace and load it as a new version on an Elastic Beanstalk
+ * Application assumes that credentials are configured outside of this code.
+ * 
+ * @author Tim Rau
+ *
+ */
 public class EBVersion extends Builder implements SimpleBuildStep {
 
 	private final String applicationName;
-	private String versionLabel;
-	private String includes;
-	private String excludes;
-//	private static AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
-	private static AWSElasticBeanstalk eb = AWSElasticBeanstalkClientBuilder.defaultClient();;
+
+	//
+	private static class s3 { // initialization-on-demand holder idiom
+		static final AmazonS3 instance = AmazonS3ClientBuilder.defaultClient();
+	} // lazy initialization because eager init slows down the config page loading
+
+	private static class eb { // initialization-on-demand holder idiom
+		static final AWSElasticBeanstalk instance = AWSElasticBeanstalkClientBuilder.defaultClient();
+	} // lazy initialization because eager init slows down the config page loading
 
 	// Fields in config.jelly must match the parameter names in the
 	// "DataBoundConstructor"
@@ -45,32 +65,57 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 		this.versionLabel = versionLabel;
 	}
 
+	private @CheckForNull String versionLabel;
+
 	@DataBoundSetter
-	public void setVersionLabel(String VersionLabel) {
+	public void setVersionLabel(@CheckForNull String VersionLabel) {
 		this.versionLabel = VersionLabel;
 	}
 
-	public String getVersionLabel() {
+	public @CheckForNull String getVersionLabel() {
 		return this.versionLabel;
 	}
 
+	private @CheckForNull String includes;
+	
 	@DataBoundSetter
-	public void setIncludes(String includes) {
-		this.includes = includes;
+	public void setIncludes(@Nonnull String includes) {
+		this.includes = includes.equals(DescriptorImpl.defaultIncludes) ? null : includes;
 	}
 
-	public String getIncludes() {
-		return this.includes;
+	public @Nonnull String getIncludes() {
+		return this.includes == null ? DescriptorImpl.defaultIncludes : this.includes;
 	}
 
+	private @CheckForNull String excludes;
+
 	@DataBoundSetter
-	public void setExcludes(String excludes) {
+	public void setExcludes(@CheckForNull String excludes) {
 		this.excludes = excludes;
 	}
 
-	public String getExcludes() {
+	public @CheckForNull String getExcludes() {
 		return this.excludes;
 	}
+	
+	private @CheckForNull String s3Bucket;
+	@DataBoundSetter
+	public void setS3Bucket(@CheckForNull String s3Bucket) {
+		this.s3Bucket = s3Bucket;
+	}
+	public @CheckForNull String getS3Bucket() {
+		return this.s3Bucket;
+	}
+	
+	private @CheckForNull String s3Prefix;
+	@DataBoundSetter
+	public void setS3Prefix(@CheckForNull String s3Prefix) {
+		this.s3Prefix = s3Prefix;
+	}
+	public @CheckForNull String getS3Prefix() {
+		return this.s3Prefix;
+	}
+	
 
 	/**
 	 * We'll use this from the {@code config.jelly}.
@@ -79,20 +124,17 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 		return applicationName;
 	}
 
-	 @Override
-	 public void perform(Run<?, ?> build, FilePath workspace, Launcher launcher,
-	 TaskListener listener) {
-	 // This is where you 'build' the project.
-	 // Since this is a dummy, we just say 'hello world' and call that a build.
-	
-	 // This also shows how you can consult the global configuration of the
-	 // builder
-	
-	 listener.getLogger().println("connect to " + applicationName +
-	 "!"+versionLabel + includes+excludes);
-	
-	
-	 }
+	@Override
+	public void perform(Run<?, ?> build, FilePath workspace, Launcher launcher, TaskListener listener) {
+		// This is where you 'build' the project.
+		// Since this is a dummy, we just say 'hello world' and call that a build.
+
+		// This also shows how you can consult the global configuration of the
+		// builder
+
+		listener.getLogger().println("connect to " + applicationName + "!" + versionLabel + includes + excludes);
+
+	}
 
 	@Override
 	public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener)
@@ -101,6 +143,31 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 		// Since this is a dummy, we just say 'hello world' and call that a build.
 
 		// This also shows how you can consult the global configuration of the builder
+		
+		File zipFile = File.createTempFile("awseb-", ".zip");
+		
+		// maybe later allow configurable zip root
+		FilePath targetPath = build.getWorkspace();
+		if (targetPath == null) {
+			throw new RuntimeException("couldn't find workspace");
+		}
+
+		listener.getLogger().println("Zipping contents of "+ targetPath.getName() +" into " + zipFile.getPath() + " (includes="+includes+", excludes="+excludes+")");
+		FileOutputStream os = new FileOutputStream(zipFile);
+		try {
+		targetPath.zip(os, new DirScanner.Glob(includes, excludes));
+		} finally {
+			os.close();
+		}
+		
+		String s3Key = s3Prefix + versionLabel+".zip";
+		listener.getLogger().printf("Uploading %s  to s3 Bucket %s as %s",zipFile.getPath(),s3Bucket,s3Key);
+		s3.instance.putObject(s3Bucket, s3Key, zipFile);
+		
+		
+		S3Location location = new S3Location(s3Bucket, s3Key);
+		listener.getLogger().printf("Creating new Version '%s' in Application %s from %s", versionLabel,applicationName,location);
+		eb.instance.createApplicationVersion(new CreateApplicationVersionRequest(applicationName, versionLabel).withSourceBundle(location));
 
 		listener.getLogger().println("connect to " + applicationName + "!" + versionLabel + includes + excludes);
 
@@ -128,14 +195,7 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 	@Extension // This indicates to Jenkins that this is an implementation of an extension
 				// point.
 	public static final class DescriptorImpl extends BuildStepDescriptor<Builder> {
-		/**
-		 * To persist global configuration information, simply store it in a field and
-		 * call save().
-		 *
-		 * <p>
-		 * If you don't want fields to be persisted, use {@code transient}.
-		 */
-		private boolean useFrench;
+		public static final String defaultIncludes = "**/*";
 
 		/**
 		 * In order to load the persisted global configuration, you have to call load()
@@ -146,7 +206,7 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 		}
 
 		/**
-		 * Performs on-the-fly validation of the form field 'name'.
+		 * Performs on-the-fly validation of the form field 'ApplicationName'.
 		 *
 		 * @param value
 		 *            This parameter receives the value that the user has typed.
@@ -158,10 +218,11 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 		 */
 		public FormValidation doCheckApplicationName(@QueryParameter String value)
 				throws IOException, ServletException {
-			
+
 			if (value.length() == 0)
 				return FormValidation.error("Please set an application name");
-			if(eb.describeApplications(new DescribeApplicationsRequest().withApplicationNames(value)).getApplications().isEmpty()) {
+			if (eb.instance.describeApplications(new DescribeApplicationsRequest().withApplicationNames(value))
+					.getApplications().isEmpty()) {
 				return FormValidation.error("Applciation not found");
 			}
 			if (value.length() < 4)
@@ -185,7 +246,7 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 		public boolean configure(StaplerRequest req, JSONObject formData) throws FormException {
 			// To persist global configuration information,
 			// set that to properties and call save().
-			useFrench = formData.getBoolean("useFrench");
+			// useFrench = formData.getBoolean("useFrench");
 			// ^Can also use req.bindJSON(this, formData);
 			// (easier when there are many fields; need set* methods for this, like
 			// setUseFrench)
@@ -193,15 +254,5 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 			return super.configure(req, formData);
 		}
 
-		/**
-		 * This method returns true if the global configuration says we should speak
-		 * French.
-		 *
-		 * The method name is bit awkward because global.jelly calls this method to
-		 * determine the initial state of the checkbox by the naming convention.
-		 */
-		public boolean getUseFrench() {
-			return useFrench;
-		}
 	}
 }
