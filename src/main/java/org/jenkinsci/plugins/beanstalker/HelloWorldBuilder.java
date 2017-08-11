@@ -80,7 +80,7 @@ public class HelloWorldBuilder extends Builder implements SimpleBuildStep {
      * See {@code src/main/resources/hudson/plugins/hello_world/HelloWorldBuilder/*.jelly}
      * for the actual HTML fragment for the configuration screen.
      */
-    @Symbol("bean")
+    @Symbol("ebHello")
     @Extension // This indicates to Jenkins that this is an implementation of an extension point.
     public static final class DescriptorImpl extends BuildStepDescriptor<Builder> {
         /**
