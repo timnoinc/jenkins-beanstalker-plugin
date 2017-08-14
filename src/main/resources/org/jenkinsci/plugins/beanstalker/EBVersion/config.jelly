@@ -14,7 +14,7 @@
     <f:textbox />
   </f:entry>
   <f:entry title="Version Label" field="versionLabel">
-    <f:textbox />
+    <f:textbox default="${descriptor.defaultVersionLabel}"/>
   </f:entry>
   <f:entry title="Includes" field="includes">
     <f:textbox default="${descriptor.defaultIncludes}"/>
@@ -22,10 +22,10 @@
   <f:entry title="Excludes" field="excludes">
     <f:textbox />
   </f:entry>
-  <f:entry title="S3 Bucket" field="S3Bucket">
+  <f:entry title="S3 Bucket" field="s3Bucket">
     <f:textbox />
   </f:entry>
-  <f:entry title="S3 Prefix" field="S3 Prefix">
+  <f:entry title="S3 Prefix" field="s3Prefix">
     <f:textbox />
   </f:entry>
 </j:jelly>

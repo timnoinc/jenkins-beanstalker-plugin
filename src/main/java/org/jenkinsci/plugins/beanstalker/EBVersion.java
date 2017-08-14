@@ -14,6 +14,7 @@ import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 
+import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalk;
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalkClientBuilder;
 import com.amazonaws.services.elasticbeanstalk.model.CreateApplicationVersionRequest;
@@ -25,6 +26,7 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
+import hudson.Util;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
@@ -60,24 +62,23 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 	// Fields in config.jelly must match the parameter names in the
 	// "DataBoundConstructor"
 	@DataBoundConstructor
-	public EBVersion(String applicationName, String versionLabel) {
+	public EBVersion(String applicationName ) {
 		this.applicationName = applicationName;
-		this.versionLabel = versionLabel;
 	}
 
 	private @CheckForNull String versionLabel;
 
 	@DataBoundSetter
-	public void setVersionLabel(@CheckForNull String VersionLabel) {
-		this.versionLabel = VersionLabel;
+	public void setVersionLabel(@Nonnull String versionLabel) {
+		this.versionLabel = versionLabel.equals(DescriptorImpl.defaultVersionLabel) ? null : versionLabel;
 	}
 
-	public @CheckForNull String getVersionLabel() {
-		return this.versionLabel;
+	public @Nonnull String getVersionLabel() {
+		return this.versionLabel == null ? DescriptorImpl.defaultVersionLabel : this.versionLabel;
 	}
 
 	private @CheckForNull String includes;
-	
+
 	@DataBoundSetter
 	public void setIncludes(@Nonnull String includes) {
 		this.includes = includes.equals(DescriptorImpl.defaultIncludes) ? null : includes;
@@ -91,31 +92,34 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 
 	@DataBoundSetter
 	public void setExcludes(@CheckForNull String excludes) {
-		this.excludes = excludes;
+		this.excludes = Util.fixEmpty(excludes);
 	}
 
 	public @CheckForNull String getExcludes() {
 		return this.excludes;
 	}
-	
+
 	private @CheckForNull String s3Bucket;
+
 	@DataBoundSetter
 	public void setS3Bucket(@CheckForNull String s3Bucket) {
 		this.s3Bucket = s3Bucket;
 	}
+
 	public @CheckForNull String getS3Bucket() {
 		return this.s3Bucket;
 	}
-	
+
 	private @CheckForNull String s3Prefix;
+
 	@DataBoundSetter
 	public void setS3Prefix(@CheckForNull String s3Prefix) {
 		this.s3Prefix = s3Prefix;
 	}
+
 	public @CheckForNull String getS3Prefix() {
 		return this.s3Prefix;
 	}
-	
 
 	/**
 	 * We'll use this from the {@code config.jelly}.
@@ -125,54 +129,96 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 	}
 
 	@Override
-	public void perform(Run<?, ?> build, FilePath workspace, Launcher launcher, TaskListener listener) {
+	public void perform(Run<?, ?> build, FilePath workspace, Launcher launcher, TaskListener listener)
+			throws InterruptedException, IOException {
 		// This is where you 'build' the project.
 		// Since this is a dummy, we just say 'hello world' and call that a build.
 
 		// This also shows how you can consult the global configuration of the
 		// builder
+		listener.getLogger().println("connect to " + applicationName + "!");
 
-		listener.getLogger().println("connect to " + applicationName + "!" + versionLabel + includes + excludes);
-
-	}
-
-	@Override
-	public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener)
-			throws InterruptedException, IOException {
-		// This is where you 'build' the project.
-		// Since this is a dummy, we just say 'hello world' and call that a build.
-
-		// This also shows how you can consult the global configuration of the builder
-		
 		File zipFile = File.createTempFile("awseb-", ".zip");
-		
+
 		// maybe later allow configurable zip root
-		FilePath targetPath = build.getWorkspace();
+		// FilePath targetPath = build.getWorkspace();
+		// FilePath targetPath = new FilePath(build.getRootDir());
+		FilePath targetPath = workspace;
 		if (targetPath == null) {
-			throw new RuntimeException("couldn't find workspace");
+			throw new InterruptedException("couldn't find workspace");
 		}
 
-		listener.getLogger().println("Zipping contents of "+ targetPath.getName() +" into " + zipFile.getPath() + " (includes="+includes+", excludes="+excludes+")");
+		listener.getLogger().println("Zipping contents of " + targetPath.getRemote() + " into " + zipFile.getPath()
+				+ " (includes=" + includes + ", excludes=" + excludes + ")");
 		FileOutputStream os = new FileOutputStream(zipFile);
 		try {
-		targetPath.zip(os, new DirScanner.Glob(includes, excludes));
+			targetPath.zip(os, new DirScanner.Glob(getIncludes(), getExcludes()));
 		} finally {
 			os.close();
 		}
-		
-		String s3Key = s3Prefix + versionLabel+".zip";
-		listener.getLogger().printf("Uploading %s  to s3 Bucket %s as %s",zipFile.getPath(),s3Bucket,s3Key);
+
+		String s3Key = s3Prefix + versionLabel + ".zip";
+		listener.getLogger().printf("Uploading %s  to s3 Bucket %s as %s %n", zipFile.getPath(), s3Bucket, s3Key);
 		s3.instance.putObject(s3Bucket, s3Key, zipFile);
-		
-		
+
 		S3Location location = new S3Location(s3Bucket, s3Key);
-		listener.getLogger().printf("Creating new Version '%s' in Application %s from %s", versionLabel,applicationName,location);
-		eb.instance.createApplicationVersion(new CreateApplicationVersionRequest(applicationName, versionLabel).withSourceBundle(location));
+		listener.getLogger().printf("Creating new Version '%s' in Application %s from %s %n", getVersionLabel(),
+				applicationName, location);
+		eb.instance.createApplicationVersion(
+				new CreateApplicationVersionRequest(applicationName, getVersionLabel()).withSourceBundle(location));
 
-		listener.getLogger().println("connect to " + applicationName + "!" + versionLabel + includes + excludes);
+		listener.getLogger().println("connect to " + applicationName + "!" + getVersionLabel() + " incl: " + getIncludes() + "excl: " +getExcludes()+ " s3 - " + getS3Bucket() );
 
-		return true;
 	}
+
+	// @Override
+	// public boolean perform(AbstractBuild<?, ?> build, Launcher launcher,
+	// BuildListener listener)
+	// throws InterruptedException, IOException {
+	// // This is where you 'build' the project.
+	// // Since this is a dummy, we just say 'hello world' and call that a build.
+	//
+	// // This also shows how you can consult the global configuration of the
+	// builder
+	//
+	// listener.getLogger().println("connect to " + applicationName + "!");
+	//
+	// File zipFile = File.createTempFile("awseb-", ".zip");
+	//
+	// // maybe later allow configurable zip root
+	// FilePath targetPath = build.getWorkspace();
+	// if (targetPath == null) {
+	// throw new InterruptedException("couldn't find workspace");
+	// }
+	//
+	// listener.getLogger().println("Zipping contents of " + targetPath.getName() +
+	// " into " + zipFile.getPath()
+	// + " (includes=" + includes + ", excludes=" + excludes + ")");
+	// FileOutputStream os = new FileOutputStream(zipFile);
+	// try {
+	// targetPath.zip(os, new DirScanner.Glob(includes, excludes));
+	// } finally {
+	// os.close();
+	// }
+	//
+	// String s3Key = s3Prefix + versionLabel + ".zip";
+	// listener.getLogger().printf("Uploading %s to s3 Bucket %s as %s",
+	// zipFile.getPath(), s3Bucket, s3Key);
+	// s3.instance.putObject(s3Bucket, s3Key, zipFile);
+	//
+	// S3Location location = new S3Location(s3Bucket, s3Key);
+	// listener.getLogger().printf("Creating new Version '%s' in Application %s from
+	// %s", versionLabel,
+	// applicationName, location);
+	// eb.instance.createApplicationVersion(
+	// new CreateApplicationVersionRequest(applicationName,
+	// versionLabel).withSourceBundle(location));
+	//
+	// listener.getLogger().println("connect to " + applicationName + "!" +
+	// versionLabel + includes + excludes);
+	//
+	// return true;
+	// }
 
 	// Overridden for better type safety.
 	// If your plugin doesn't really define any property on Descriptor,
@@ -195,7 +241,8 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 	@Extension // This indicates to Jenkins that this is an implementation of an extension
 				// point.
 	public static final class DescriptorImpl extends BuildStepDescriptor<Builder> {
-		public static final String defaultIncludes = "**/*";
+		public static final String defaultVersionLabel = "${BUILD_TAG}";
+		public static final String defaultIncludes = "**";
 
 		/**
 		 * In order to load the persisted global configuration, you have to call load()
@@ -223,10 +270,19 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 				return FormValidation.error("Please set an application name");
 			if (eb.instance.describeApplications(new DescribeApplicationsRequest().withApplicationNames(value))
 					.getApplications().isEmpty()) {
-				return FormValidation.error("Applciation not found");
+				return FormValidation.warning("Applciation not found");
 			}
-			if (value.length() < 4)
-				return FormValidation.warning("Isn't the name too short?");
+			return FormValidation.ok();
+		}
+
+		public FormValidation doCheckS3Bucket(@QueryParameter String value) {
+			if (value.length() == 0)
+				return FormValidation.error("Please set a bucket to upload to");
+			try {
+				s3.instance.listObjects(value);
+			} catch (AmazonServiceException e) {
+				return FormValidation.warning("S3 Bucket not found");
+			}
 			return FormValidation.ok();
 		}
 
