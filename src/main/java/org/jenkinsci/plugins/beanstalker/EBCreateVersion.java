@@ -46,7 +46,7 @@ import net.sf.json.JSONObject;
  * @author Tim Rau
  *
  */
-public class EBVersion extends Builder implements SimpleBuildStep {
+public class EBCreateVersion extends Builder implements SimpleBuildStep {
 
 	private final String applicationName;
 
@@ -62,7 +62,7 @@ public class EBVersion extends Builder implements SimpleBuildStep {
 	// Fields in config.jelly must match the parameter names in the
 	// "DataBoundConstructor"
 	@DataBoundConstructor
-	public EBVersion(String applicationName ) {
+	public EBCreateVersion(String applicationName ) {
 		this.applicationName = applicationName;
 	}
 
