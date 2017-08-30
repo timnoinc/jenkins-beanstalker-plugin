@@ -26,8 +26,8 @@
 			by the plugin. -->
 	</properties>
 
-	<name>TODO Plugin</name>
-	<description>TODO</description>
+	<name>Beanstalker Plugin</name>
+	<description>For noinc beanstalkers.</description>
 	<url>https://wiki.jenkins-ci.org/display/JENKINS/TODO+Plugin</url>
 
 	<!-- The default licence for Jenkins OSS Plugins is MIT. Substitute for 
@@ -72,13 +72,12 @@
 			<artifactId>credentials</artifactId>
 			<version>2.0</version>
 		</dependency>
-
 		<dependency>
 			<groupId>org.jenkins-ci.plugins.workflow</groupId>
-			<artifactId>workflow-basic-steps</artifactId>
-			<version>2.6</version>
-			<scope>test</scope>
+			<artifactId>workflow-step-api</artifactId>
+			<version>2.4</version>
 		</dependency>
+		
 
 		<!-- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk -->
 		<dependency>
