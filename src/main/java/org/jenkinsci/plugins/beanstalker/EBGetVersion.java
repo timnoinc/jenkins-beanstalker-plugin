@@ -1,6 +1,7 @@
 package org.jenkinsci.plugins.beanstalker;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 import javax.annotation.CheckForNull;
@@ -9,56 +10,58 @@ import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.jenkinsci.plugins.workflow.steps.SynchronousNonBlockingStepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
-import static hudson.model.Result.ABORTED;
+import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalk;
+import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalkClientBuilder;
+import com.amazonaws.services.elasticbeanstalk.model.DescribeEnvironmentsRequest;
+import com.amazonaws.services.elasticbeanstalk.model.EnvironmentDescription;
 
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.AbortException;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Util;
-import hudson.model.Executor;
 import hudson.slaves.WorkspaceList;
 
 public class EBGetVersion extends Step {
-	
+
 	private final String applicationName;
 	private String environmentName;
-	
+
+	private static class AWSElasticBeanstalkHolder {
+		private static final AWSElasticBeanstalk instance = AWSElasticBeanstalkClientBuilder.defaultClient();
+	}
+
 	@DataBoundConstructor
 	public EBGetVersion(String applicationName) {
 		this.applicationName = applicationName;
 	}
-	
-	@CheckForNull public String getApplicationName() {
+
+	@CheckForNull
+	public String getApplicationName() {
 		return this.applicationName;
 	}
-	
+
 	@DataBoundSetter
 	public void setEnvironmentName(@CheckForNull String environmentName) {
 		this.environmentName = Util.fixEmpty(environmentName);
 	}
-	
-	@CheckForNull public String getEnvironmentName() {
+
+	@CheckForNull
+	public String getEnvironmentName() {
 		return this.environmentName;
 	}
-	
+
 	@Override
 	public StepExecution start(StepContext context) throws Exception {
 		// TODO Auto-generated method stub
-		return new Execution(false, context);
+		return new Execution(this, context);
 	}
 
 	@Extension
 	public static final class DescriptorImpl extends StepDescriptor {
-
-		@Override
-		public Set<Class<?>> getRequiredContext() {
-//			return Collections.singleton(FilePath.class);
-			return null;
-		}
 
 		@Override
 		public String getFunctionName() {
@@ -72,55 +75,36 @@ public class EBGetVersion extends Step {
 			return "Beanstalker Get Version";
 		}
 
-	}
-
-	// TODO use 1.652 use WorkspaceList.tempDir
-	private static FilePath tempDir(FilePath ws) {
-		return ws.sibling(ws.getName() + System.getProperty(WorkspaceList.class.getName(), "@") + "tmp");
-	}
-
-	public static class Execution extends StepExecution {
-		private transient volatile Thread executing;
-		@SuppressFBWarnings(value = "SE_TRANSIENT_FIELD_NOT_RESTORED", justification = "Only used when starting.")
-		private transient final boolean tmp;
-
-		Execution(boolean tmp, StepContext context) {
-			super(context);
-			this.tmp = tmp;
+		@Override
+		public Set<Class<?>> getRequiredContext() {
+			return Collections.emptySet();
 		}
 
-		// @Override
+	}
+
+	public static class Execution extends SynchronousNonBlockingStepExecution<String> {
+		private EBGetVersion step;
+
+		Execution(EBGetVersion step, StepContext context) {
+			super(context);
+			this.step = step;
+		}
+
+		@Override
 		protected String run() throws Exception {
-			FilePath cwd = getContext().get(FilePath.class);
-			return (tmp ? tempDir(cwd) : cwd).getRemote();
+			List<EnvironmentDescription> e = AWSElasticBeanstalkHolder.instance.describeEnvironments(new DescribeEnvironmentsRequest()
+					.withApplicationName(step.getApplicationName())
+					.withEnvironmentIds(step.getEnvironmentName())).getEnvironments();
+			if (e.isEmpty()) {
+				throw new AbortException("Couldn't find any environments with that name!");
+			}
+			if (e.size() > 1) {
+				throw new AbortException("Somehow got more than one environment in that application with that name?");
+			}
+			return e.get(0).getVersionLabel();
 		}
 
 		private static final long serialVersionUID = 1L;
-
-		@Override
-		public boolean start() throws Exception {
-			executing = Thread.currentThread();
-			try {
-				getContext().onSuccess(run());
-			} catch (Throwable t) {
-				getContext().onFailure(t);
-			} finally {
-				executing = null;
-			}
-			return true;
-		}
-
-		@Override
-		public void stop(Throwable arg0) throws Exception {
-			Thread e = executing; // capture
-			if (e != null) {
-				if (e instanceof Executor) {
-					((Executor) e).interrupt(ABORTED);
-				} else {
-					e.interrupt();
-				}
-			}
-		}
 
 	}
 
