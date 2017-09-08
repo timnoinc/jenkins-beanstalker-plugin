@@ -14,9 +14,11 @@ import org.jenkinsci.plugins.workflow.steps.SynchronousNonBlockingStepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
+
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalk;
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalkClientBuilder;
 import com.amazonaws.services.elasticbeanstalk.model.DescribeEnvironmentsRequest;
+import com.amazonaws.services.elasticbeanstalk.model.DescribeEnvironmentsResult;
 import com.amazonaws.services.elasticbeanstalk.model.EnvironmentDescription;
 
 import hudson.AbortException;
@@ -31,7 +33,7 @@ public class EBGetVersion extends Step {
 	private String environmentName;
 
 	private static class AWSElasticBeanstalkHolder {
-		private static final AWSElasticBeanstalk instance = AWSElasticBeanstalkClientBuilder.defaultClient();
+		private static final AWSElasticBeanstalk instance = AWSElasticBeanstalkClientBuilder.standard().withRegion("us-east-1").build();
 	}
 
 	@DataBoundConstructor
@@ -83,7 +85,7 @@ public class EBGetVersion extends Step {
 	}
 
 	public static class Execution extends SynchronousNonBlockingStepExecution<String> {
-		private EBGetVersion step;
+		private transient final EBGetVersion step;
 
 		Execution(EBGetVersion step, StepContext context) {
 			super(context);
@@ -92,11 +94,13 @@ public class EBGetVersion extends Step {
 
 		@Override
 		protected String run() throws Exception {
-			List<EnvironmentDescription> e = AWSElasticBeanstalkHolder.instance.describeEnvironments(new DescribeEnvironmentsRequest()
+			DescribeEnvironmentsResult result = AWSElasticBeanstalkHolder.instance.describeEnvironments(new DescribeEnvironmentsRequest()
 					.withApplicationName(step.getApplicationName())
-					.withEnvironmentIds(step.getEnvironmentName())).getEnvironments();
+					.withEnvironmentIds(step.getEnvironmentName()));
+			
+			List<EnvironmentDescription> e = result.getEnvironments();
 			if (e.isEmpty()) {
-				throw new AbortException("Couldn't find any environments with that name!");
+				throw new AbortException("Couldn't find any environments named "+ step.getEnvironmentName() +" in the application " + step.getApplicationName() + ": " + result.getSdkResponseMetadata().toString()) ;
 			}
 			if (e.size() > 1) {
 				throw new AbortException("Somehow got more than one environment in that application with that name?");
