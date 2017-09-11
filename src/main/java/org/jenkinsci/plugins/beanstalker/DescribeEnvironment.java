@@ -67,12 +67,12 @@ public class DescribeEnvironment extends Step {
 
 		@Override
 		public String getFunctionName() {
-			return "describeEBEnvironment";
+			return "EBDescribeEnvironment";
 		}
 
 		@Override
 		public String getDisplayName() {
-			return "Beanstalker Describe Environment";
+			return "Describe an elastic beanstalk Environment";
 		}
 
 		@Override
