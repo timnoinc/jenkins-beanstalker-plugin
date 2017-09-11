@@ -14,30 +14,30 @@ import org.jenkinsci.plugins.workflow.steps.SynchronousNonBlockingStepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
-
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalk;
 import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalkClientBuilder;
 import com.amazonaws.services.elasticbeanstalk.model.DescribeEnvironmentsRequest;
 import com.amazonaws.services.elasticbeanstalk.model.DescribeEnvironmentsResult;
 import com.amazonaws.services.elasticbeanstalk.model.EnvironmentDescription;
+import com.trilead.ssh2.log.Logger;
 
 import hudson.AbortException;
 import hudson.Extension;
-import hudson.FilePath;
 import hudson.Util;
-import hudson.slaves.WorkspaceList;
 
-public class EBGetVersion extends Step {
+public class DescribeEnvironment extends Step {
 
 	private final String applicationName;
 	private String environmentName;
 
 	private static class AWSElasticBeanstalkHolder {
-		private static final AWSElasticBeanstalk instance = AWSElasticBeanstalkClientBuilder.standard().withRegion("us-east-1").build();
+		private static final AWSElasticBeanstalk instance = AWSElasticBeanstalkClientBuilder.standard()
+//				.withRegion("us-east-1")
+				.build();
 	}
 
 	@DataBoundConstructor
-	public EBGetVersion(String applicationName) {
+	public DescribeEnvironment(String applicationName) {
 		this.applicationName = applicationName;
 	}
 
@@ -67,14 +67,12 @@ public class EBGetVersion extends Step {
 
 		@Override
 		public String getFunctionName() {
-			// TODO Auto-generated method stub
-			return "EBGetVersion";
+			return "describeEBEnvironment";
 		}
 
 		@Override
 		public String getDisplayName() {
-			// TODO Auto-generated method stub
-			return "Beanstalker Get Version";
+			return "Beanstalker Describe Environment";
 		}
 
 		@Override
@@ -84,28 +82,35 @@ public class EBGetVersion extends Step {
 
 	}
 
-	public static class Execution extends SynchronousNonBlockingStepExecution<String> {
-		private transient final EBGetVersion step;
+	public static class Execution extends SynchronousNonBlockingStepExecution<EnvironmentDescription> {
+		private transient final DescribeEnvironment step;
+		private static final Logger LOGGER = Logger.getLogger(Execution.class);
 
-		Execution(EBGetVersion step, StepContext context) {
+		Execution(DescribeEnvironment step, StepContext context) {
 			super(context);
 			this.step = step;
 		}
 
 		@Override
-		protected String run() throws Exception {
+		protected EnvironmentDescription run() throws Exception {
 			DescribeEnvironmentsResult result = AWSElasticBeanstalkHolder.instance.describeEnvironments(new DescribeEnvironmentsRequest()
 					.withApplicationName(step.getApplicationName())
-					.withEnvironmentIds(step.getEnvironmentName()));
+					.withEnvironmentNames(step.getEnvironmentName())
+					);
 			
 			List<EnvironmentDescription> e = result.getEnvironments();
+			
 			if (e.isEmpty()) {
-				throw new AbortException("Couldn't find any environments named "+ step.getEnvironmentName() +" in the application " + step.getApplicationName() + ": " + result.getSdkResponseMetadata().toString()) ;
+//				ProcessBuilder pb = new ProcessBuilder("aws","elasticbeanstalk","describeEnvironments", "--ApplicationName" );
+				throw new AbortException("Couldn't find any environments named "+ step.getEnvironmentName() +" in the application " + step.getApplicationName() + ": " + result.getSdkHttpMetadata().getHttpStatusCode() + result.getSdkHttpMetadata().getHttpHeaders()) ;
+				
 			}
-			if (e.size() > 1) {
-				throw new AbortException("Somehow got more than one environment in that application with that name?");
-			}
-			return e.get(0).getVersionLabel();
+//			if (e.size() > 1) {
+//				throw new AbortException("Somehow got more than one environment in that application with that name?");
+//			}
+			LOGGER.log(0, "environments: " + e); 
+			
+			return e.get(0);
 		}
 
 		private static final long serialVersionUID = 1L;
