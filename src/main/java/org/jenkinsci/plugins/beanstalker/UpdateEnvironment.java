@@ -19,16 +19,19 @@ import com.amazonaws.services.elasticbeanstalk.AWSElasticBeanstalkClientBuilder;
 import com.amazonaws.services.elasticbeanstalk.model.DescribeEnvironmentsRequest;
 import com.amazonaws.services.elasticbeanstalk.model.DescribeEnvironmentsResult;
 import com.amazonaws.services.elasticbeanstalk.model.EnvironmentDescription;
+import com.amazonaws.services.elasticbeanstalk.model.UpdateEnvironmentRequest;
+import com.amazonaws.services.elasticbeanstalk.model.UpdateEnvironmentResult;
 import com.trilead.ssh2.log.Logger;
 
 import hudson.AbortException;
 import hudson.Extension;
 import hudson.Util;
 
-public class DescribeEnvironment extends Step {
+public class UpdateEnvironment extends Step {
 
 	private final String applicationName;
 	private String environmentName;
+	private String newVersion;
 
 	private static class AWSElasticBeanstalkHolder {
 		private static final AWSElasticBeanstalk instance = AWSElasticBeanstalkClientBuilder.standard()
@@ -37,7 +40,7 @@ public class DescribeEnvironment extends Step {
 	}
 
 	@DataBoundConstructor
-	public DescribeEnvironment(String applicationName) {
+	public UpdateEnvironment(String applicationName) {
 		this.applicationName = applicationName;
 	}
 
@@ -55,10 +58,19 @@ public class DescribeEnvironment extends Step {
 	public String getEnvironmentName() {
 		return this.environmentName;
 	}
+	
+	@DataBoundSetter
+	public void setNewVersion(@CheckForNull String newVersion) {
+		this.newVersion = Util.fixEmpty(newVersion);
+	}
+
+	@CheckForNull
+	public String getNewVersion() {
+		return this.newVersion;
+	}
 
 	@Override
 	public StepExecution start(StepContext context) throws Exception {
-		// TODO Auto-generated method stub
 		return new Execution(this, context);
 	}
 
@@ -67,12 +79,12 @@ public class DescribeEnvironment extends Step {
 
 		@Override
 		public String getFunctionName() {
-			return "ebDescribeEnvironment";
+			return "ebUpdateEnvironment";
 		}
 
 		@Override
 		public String getDisplayName() {
-			return "Describe an elastic beanstalk Environment";
+			return "Update an elastic beanstalk Environment";
 		}
 
 		@Override
@@ -83,22 +95,29 @@ public class DescribeEnvironment extends Step {
 	}
 
 	public static class Execution extends SynchronousNonBlockingStepExecution<EnvironmentDescription> {
-		private transient final DescribeEnvironment step;
+		private transient final UpdateEnvironment step;
 		private static final Logger LOGGER = Logger.getLogger(Execution.class);
 
-		Execution(DescribeEnvironment step, StepContext context) {
+		Execution(UpdateEnvironment step, StepContext context) {
 			super(context);
 			this.step = step;
 		}
 
 		@Override
 		protected EnvironmentDescription run() throws Exception {
-			DescribeEnvironmentsResult result = AWSElasticBeanstalkHolder.instance.describeEnvironments(new DescribeEnvironmentsRequest()
+			
+			UpdateEnvironmentResult result = AWSElasticBeanstalkHolder.instance.updateEnvironment(new UpdateEnvironmentRequest()
+					.withApplicationName(step.getApplicationName())
+					.withEnvironmentName(step.getEnvironmentName())
+					.withVersionLabel(step.getNewVersion())
+					);
+//			
+			DescribeEnvironmentsResult r = AWSElasticBeanstalkHolder.instance.describeEnvironments(new DescribeEnvironmentsRequest()
 					.withApplicationName(step.getApplicationName())
 					.withEnvironmentNames(step.getEnvironmentName())
 					);
 			
-			List<EnvironmentDescription> e = result.getEnvironments();
+			List<EnvironmentDescription> e = r.getEnvironments();
 			
 			if (e.isEmpty()) {
 //				ProcessBuilder pb = new ProcessBuilder("aws","elasticbeanstalk","describeEnvironments", "--ApplicationName" );
